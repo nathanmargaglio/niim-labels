@@ -1,0 +1,19 @@
+{
+  "name": "Order Labels",
+  "short_name": "Labels",
+  "description": "Print per-person order labels from an orders PDF to a NIIMBOT B1 over Bluetooth.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f5f7",
+  "theme_color": "#111418",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
