@@ -2,7 +2,7 @@ import { parsePages, buildQueue } from "./orders.js";
 import { readPdfPages } from "./pdf-source.js";
 import { renderLabel, mmToPx, pxToMm, FONT_STACKS } from "./label.js";
 import { PrinterSession, transportSupport, LABEL_TYPES } from "./printer.js";
-import { loadSettings, saveSettings, DEFAULTS } from "./settings.js";
+import { loadSettings, saveSettings, DEFAULTS, BADGE_SCOPES } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,7 +56,8 @@ const el = {
   setDensity: $("set-density"),
   setDensityValue: $("set-density-value"),
   setLabelType: $("set-label-type"),
-  setNumbering: $("set-numbering"),
+  setTopBadge: $("set-top-badge"),
+  setBottomBadge: $("set-bottom-badge"),
   setFont: $("set-font"),
   setBold: $("set-bold"),
 };
@@ -89,6 +90,38 @@ function geometry() {
     marginPx: mmToPx(state.settings.marginMm, caps.dpi),
     clampedFrom: requestedWidth > caps.printheadPixels ? requestedWidth : null,
     printheadPixels: caps.printheadPixels,
+  };
+}
+
+/**
+ * Text for one corner index, or "" when that corner is switched off.
+ *
+ * The `run` scope is relative to the selected range, so a label outside it has
+ * no position in the run; the preview shows a dash rather than a wrong number.
+ */
+function badgeText(label, scope) {
+  switch (scope) {
+    case "sheet":
+      return `${label.sheetPosition}/${label.sheetTotal}`;
+    case "run": {
+      const total = selectionSize();
+      if (total === 0) return "";
+      const index = label.position - state.from + 1;
+      return `${index >= 1 && index <= total ? index : "–"}/${total}`;
+    }
+    case "person":
+      return `${label.personIndex}/${label.personTotal}`;
+    default:
+      return "";
+  }
+}
+
+/** Adds the corner indexes the current settings ask for. */
+function withBadges(label) {
+  return {
+    ...label,
+    topRight: badgeText(label, state.settings.topBadge),
+    bottomRight: badgeText(label, state.settings.bottomBadge),
   };
 }
 
@@ -172,10 +205,7 @@ function optionEl(value, text) {
 function recomputeQueue({ resetRange = false } = {}) {
   if (!state.sheet) return;
   const person = el.personSelect.value;
-  state.queue = buildQueue(state.sheet, {
-    people: person ? [person] : null,
-    numbering: state.settings.numbering,
-  });
+  state.queue = buildQueue(state.sheet, { people: person ? [person] : null });
 
   if (resetRange || state.from > state.queue.length) state.from = 1;
   if (resetRange || state.to > state.queue.length || state.to < 1) state.to = state.queue.length;
@@ -238,7 +268,7 @@ function renderQueue() {
     person.textContent = label.person;
     const order = document.createElement("span");
     order.className = "queue-order";
-    order.textContent = `${label.number}. ${label.order}`;
+    order.textContent = label.order;
     body.append(person, order);
     body.addEventListener("click", () => {
       state.previewIndex = label.position - 1;
@@ -308,7 +338,7 @@ function renderPreview() {
   }
 
   const geo = geometry();
-  renderLabel(el.preview, label, labelStyle(geo));
+  renderLabel(el.preview, withBadges(label), labelStyle(geo));
 
   const inRange = label.position >= state.from && label.position <= state.to;
   el.previewCaption.textContent =
@@ -373,7 +403,7 @@ async function startPrint() {
   try {
     const { printed, cancelled } = await printer.print({
       count: slice.length,
-      renderPage: (index) => renderLabel(printCanvas, slice[index], style),
+      renderPage: (index) => renderLabel(printCanvas, withBadges(slice[index]), style),
       copies: state.settings.copies,
       density: state.settings.density,
       labelType: state.settings.labelType,
@@ -492,13 +522,17 @@ function fillSettingsForm() {
   const s = state.settings;
   if (el.setLabelType.options.length === 0) {
     el.setLabelType.replaceChildren(...LABEL_TYPES.map((type) => optionEl(String(type.value), type.label)));
+    for (const select of [el.setTopBadge, el.setBottomBadge]) {
+      select.replaceChildren(...BADGE_SCOPES.map((scope) => optionEl(scope.value, scope.label)));
+    }
   }
   el.setWidth.value = String(s.widthMm);
   el.setHeight.value = String(s.heightMm);
   el.setMargin.value = String(s.marginMm);
   el.setCopies.value = String(s.copies);
   el.setDensity.value = String(s.density);
-  el.setNumbering.value = s.numbering;
+  el.setTopBadge.value = s.topBadge;
+  el.setBottomBadge.value = s.bottomBadge;
   el.setFont.value = s.font;
   el.setBold.checked = s.boldName;
   el.setLabelType.value = String(s.labelType);
@@ -517,7 +551,6 @@ function updateSettingsNotes() {
 }
 
 function applySettingsFromForm() {
-  const previousNumbering = state.settings.numbering;
   state.settings = saveSettings({
     ...state.settings,
     widthMm: Number(el.setWidth.value),
@@ -526,20 +559,17 @@ function applySettingsFromForm() {
     copies: Number(el.setCopies.value),
     density: Number(el.setDensity.value),
     labelType: Number(el.setLabelType.value),
-    numbering: el.setNumbering.value,
+    topBadge: el.setTopBadge.value,
+    bottomBadge: el.setBottomBadge.value,
     font: el.setFont.value,
     boldName: el.setBold.checked,
   });
 
-  // Only the numbering scheme changes what the labels say, so only it needs the
-  // queue rebuilt; the range survives because no label has moved.
-  if (state.settings.numbering !== previousNumbering) {
-    recomputeQueue();
-  } else {
-    renderRangeControls();
-    renderPreview();
-    updatePrintButton();
-  }
+  // No setting changes which labels exist or their order, so the queue itself
+  // never needs rebuilding here - only what is drawn on each label.
+  renderRangeControls();
+  renderPreview();
+  updatePrintButton();
   updateSettingsNotes();
 }
 
@@ -621,7 +651,8 @@ for (const input of [
   el.setCopies,
   el.setDensity,
   el.setLabelType,
-  el.setNumbering,
+  el.setTopBadge,
+  el.setBottomBadge,
   el.setFont,
   el.setBold,
 ]) {

@@ -1,14 +1,15 @@
 /**
  * Draws a single label onto a canvas at the printer's native resolution.
  *
- * The layout is fixed: the person's name at the top, the numbered order in the
- * middle, the same name again at the bottom, everything left justified.
+ * The layout is fixed: the person's name at the top, the order in the middle,
+ * the same name again at the bottom, all left justified, with an optional
+ * index in each right-hand corner.
  *
- *     Nate
+ *     Nate                14/28
  *
- *     2. Chicken Elote Salad
+ *     Chicken Elote Salad
  *
- *     Nate
+ *     Nate                  3/5
  */
 
 const MM_PER_INCH = 25.4;
@@ -29,13 +30,26 @@ export const FONT_STACKS = {
   serif: 'Georgia, "Times New Roman", serif',
 };
 
+/**
+ * Font box metrics for the current font.
+ *
+ * measureText reports these relative to the current textBaseline, so it is
+ * pinned to the alphabetic baseline and restored, making the split between
+ * ascent and descent independent of how the caller happens to be drawing.
+ */
+function fontBox(ctx, fallbackSize) {
+  const previous = ctx.textBaseline;
+  ctx.textBaseline = "alphabetic";
+  const m = ctx.measureText("Hg");
+  ctx.textBaseline = previous;
+  const ascent = m.fontBoundingBoxAscent || fallbackSize * 0.8;
+  const descent = m.fontBoundingBoxDescent || fallbackSize * 0.2;
+  return { ascent, descent, height: ascent + descent };
+}
+
 /** Height a line of the current font occupies, including ascender and descender. */
 function lineHeight(ctx, fallbackSize) {
-  const m = ctx.measureText("Hg");
-  if (m.fontBoundingBoxAscent && m.fontBoundingBoxDescent) {
-    return m.fontBoundingBoxAscent + m.fontBoundingBoxDescent;
-  }
-  return fallbackSize * 1.2;
+  return fontBox(ctx, fallbackSize).height;
 }
 
 /** Greedily breaks text into lines that each fit within maxWidth. */
@@ -120,7 +134,9 @@ export function thresholdCanvas(canvas, level = 176) {
  * Renders one label.
  *
  * @param {HTMLCanvasElement} canvas Resized in place to the label's pixel size.
- * @param {{person: string, number: number, order: string}} label
+ * @param {{person: string, order: string, topRight?: string, bottomRight?: string}} label
+ *        `topRight` and `bottomRight` are drawn in the corners; omit or pass an
+ *        empty string to leave a corner blank.
  * @param {object} style Pixel geometry and typography.
  * @returns {HTMLCanvasElement} The same canvas, thresholded and ready to encode.
  */
@@ -147,13 +163,30 @@ export function renderLabel(canvas, label, style) {
   const contentWidth = Math.max(1, widthPx - marginPx * 2);
   const contentHeight = Math.max(1, heightPx - marginPx * 2);
   const nameFont = (size) => `${boldName ? "bold " : ""}${size}px ${fontFamily}`;
-  const orderFont = (size) => `${size}px ${fontFamily}`;
+  const plainFont = (size) => `${size}px ${fontFamily}`;
   const name = label.person || "";
-  const orderText = `${label.number}. ${label.order}`.trim();
+  const orderText = (label.order || "").trim();
+  const topRight = (label.topRight || "").trim();
+  const bottomRight = (label.bottomRight || "").trim();
 
-  // The name is sized first; the order takes whatever height is left between the
+  // Corner badges are sized independently of the name, so that the width they
+  // leave for the name is known before the name is fitted.
+  let badgeSize = Math.max(6, Math.round(contentHeight * 0.15));
+  for (const text of [topRight, bottomRight]) {
+    if (text !== "") {
+      badgeSize = Math.min(badgeSize, fitOneLine(ctx, text, plainFont, contentWidth * 0.4, badgeSize, 6));
+    }
+  }
+  ctx.font = plainFont(badgeSize);
+  const topBadgeWidth = topRight === "" ? 0 : ctx.measureText(topRight).width;
+  const bottomBadgeWidth = bottomRight === "" ? 0 : ctx.measureText(bottomRight).width;
+  // Both rows show the same name at the same size, so the wider badge governs.
+  const widestBadge = Math.max(topBadgeWidth, bottomBadgeWidth);
+  const nameWidth = Math.max(1, contentWidth - (widestBadge > 0 ? widestBadge + badgeSize * 0.6 : 0));
+
+  // The name is sized next; the order takes whatever height is left between the
   // two copies of it. If that leaves too little room, the name gives some back.
-  let nameSize = fitOneLine(ctx, name, nameFont, contentWidth, Math.round(contentHeight * 0.26), 7);
+  let nameSize = fitOneLine(ctx, name, nameFont, nameWidth, Math.round(contentHeight * 0.26), 7);
   let nameHeight;
   let bandTop;
   let bandHeight;
@@ -171,22 +204,34 @@ export function renderLabel(canvas, label, style) {
   const orderSize = fitBlock(
     ctx,
     orderText,
-    orderFont,
+    plainFont,
     contentWidth,
     bandHeight,
     Math.round(contentHeight * 0.4),
     6,
   );
 
+  // Name and badge sit on a shared baseline so their differing sizes line up.
   ctx.font = nameFont(nameSize);
-  ctx.fillText(name, marginPx, marginPx, contentWidth);
-  ctx.fillText(name, marginPx, heightPx - marginPx - nameHeight, contentWidth);
+  const nameAscent = fontBox(ctx, nameSize).ascent;
+  const topBaseline = marginPx + nameAscent;
+  const bottomBaseline = heightPx - marginPx - nameHeight + nameAscent;
 
-  ctx.font = orderFont(orderSize);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(name, marginPx, topBaseline, nameWidth);
+  ctx.fillText(name, marginPx, bottomBaseline, nameWidth);
+
+  ctx.textAlign = "right";
+  ctx.font = plainFont(badgeSize);
+  if (topRight !== "") ctx.fillText(topRight, widthPx - marginPx, topBaseline);
+  if (bottomRight !== "") ctx.fillText(bottomRight, widthPx - marginPx, bottomBaseline);
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.font = plainFont(orderSize);
   const orderLines = wrapText(ctx, orderText, contentWidth);
   const orderLineHeight = lineHeight(ctx, orderSize);
-  const blockHeight = orderLines.length * orderLineHeight;
-  let y = bandTop + (bandHeight - blockHeight) / 2;
+  let y = bandTop + (bandHeight - orderLines.length * orderLineHeight) / 2;
   for (const line of orderLines) {
     ctx.fillText(line, marginPx, y, contentWidth);
     y += orderLineHeight;

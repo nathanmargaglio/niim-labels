@@ -235,32 +235,37 @@ export function parsePages(pages) {
 /**
  * Flattens people and their orders into the sequence of labels to print.
  *
- * A person's labels are always numbered 1..n over everything they ordered, so
- * the number on a label does not change with what is selected for printing.
+ * Every label carries two fixed indexes — its place among that person's orders
+ * and its place in the whole sheet — so neither changes with what is selected
+ * for printing. `position` is its place in the returned list, which is what the
+ * range controls address.
  *
  * @param {object} sheet Result of {@link parsePages}.
- * @param {{people?: string[]|null, numbering?: "per-person"|"continuous"}} [options]
+ * @param {{people?: string[]|null}} [options] `people` narrows the list to those names.
  */
 export function buildQueue(sheet, options = {}) {
-  const { people = null, numbering = "per-person" } = options;
-  const selected = people ? sheet.people.filter((person) => people.includes(person.name)) : sheet.people;
+  const { people = null } = options;
 
-  const queue = [];
-  for (const person of selected) {
+  // Built over everyone first, so the sheet-wide index survives filtering.
+  const all = [];
+  for (const person of sheet.people) {
     let nth = 0;
     for (const item of person.items) {
       for (let copy = 0; copy < item.count; copy++) {
         nth++;
-        queue.push({
+        all.push({
           person: person.name,
           order: item.order,
-          number: numbering === "continuous" ? queue.length + 1 : nth,
           personIndex: nth,
           personTotal: person.total,
-          position: queue.length + 1,
+          sheetPosition: all.length + 1,
+          sheetTotal: 0,
         });
       }
     }
   }
-  return queue;
+  for (const label of all) label.sheetTotal = all.length;
+
+  const selected = people ? all.filter((label) => people.includes(label.person)) : all;
+  return selected.map((label, index) => ({ ...label, position: index + 1 }));
 }

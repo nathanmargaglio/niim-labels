@@ -4,16 +4,31 @@ A mobile-first web app that turns an orders PDF into one printed label per item
 and sends them straight to a **NIIMBOT B1** over Bluetooth. It is a static site —
 no server, no build step at runtime — so it runs from GitHub Pages.
 
-Each label is laid out with the person's name top and bottom and the numbered
-order in the middle, all left justified:
+Each label is laid out with the person's name top and bottom and the order in
+the middle, all left justified, with a configurable index in each right-hand
+corner:
 
 ```
-Nate
+Nate                14/28
 
-2. Chicken Elote Salad
+Chicken Elote Salad
 
-Nate
+Nate                  3/5
 ```
+
+By default the top right counts the label against the whole sheet and the
+bottom right against that person's own orders. Each corner can be switched off
+or pointed at any of three counts:
+
+| Setting | Counts against | Example |
+| ------- | -------------- | ------- |
+| Whole sheet | every label in the PDF | `14/28` |
+| This print run | the range being printed | `2/3` |
+| This person's orders | that person's own orders | `3/5` |
+
+The sheet and person counts are fixed to the label, so they read the same no
+matter who or what range is selected. The print-run count is relative to the
+selection, so a label outside the current range previews as `–/3`.
 
 ## How it works
 
@@ -32,10 +47,8 @@ Nate
    pages are merged by person. Every row's own `Total` is compared against its
    person columns, and a mismatch is reported rather than silently printed.
 
-2. **Pick what to print.** Choose everyone or one person, then a range. Each
-   label is numbered within that person's own order, so the number on a label
-   never changes with what you select — printing `#4–#6` prints exactly the
-   labels shown as `#4`, `#5` and `#6`.
+2. **Pick what to print.** Choose everyone or one person, then a range.
+   Printing `#4–#6` prints exactly the labels shown as `#4`, `#5` and `#6`.
 
 3. **Print.** Connect the printer through the browser's Bluetooth picker and
    print. Progress is shown per label and a run can be stopped between labels.
@@ -56,8 +69,8 @@ The page must be served over HTTPS (GitHub Pages is) or from `localhost`.
 The B1 prints at 203 dpi across a 384 px (48 mm) printhead. The defaults match
 the 50 × 30 mm roll that ships with it; a label wider than the printhead is
 rendered at the printhead's width, which the preview says when it happens. Label
-size, margin, darkness, label type, copies, numbering and font are all in
-**Settings** and are remembered on the device.
+size, margin, darkness, label type, copies, the two corner indexes and the font
+are all in **Settings** and are remembered on the device.
 
 ## Deploying
 
