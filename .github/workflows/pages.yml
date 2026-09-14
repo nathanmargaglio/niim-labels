@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # Run the checks on pull requests too, so a branch is validated before it
+  # reaches main. The deploy job below stays on main only.
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -10,9 +13,10 @@ permissions:
   pages: write
   id-token: write
 
-# Let a running deploy finish rather than cancelling it mid-publish.
+# Let a running deploy finish rather than cancelling it mid-publish. Keyed by
+# ref so pull request runs never queue behind a deploy of main.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -33,6 +37,7 @@ jobs:
 
   deploy:
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
