@@ -178,7 +178,7 @@ test("stitches an order name split across several text runs", () => {
   assert.deepEqual(parsed.orders, ["Chicken Salad"]);
 });
 
-test("buildQueue numbers each person's labels from one, in sheet order", () => {
+test("buildQueue expands counts in sheet order, indexed per person and per sheet", () => {
   const parsed = parsePages([
     sheet({
       header: HEADER,
@@ -190,18 +190,18 @@ test("buildQueue numbers each person's labels from one, in sheet order", () => {
   ]);
 
   assert.deepEqual(
-    buildQueue(parsed).map((l) => `${l.position}|${l.person}|${l.number}. ${l.order}`),
+    buildQueue(parsed).map((l) => `${l.position}|${l.person}|${l.order}|${l.personIndex}/${l.personTotal}|${l.sheetPosition}/${l.sheetTotal}`),
     [
-      "1|Nate|1. Chicken Caesar Salad",
-      "2|Nate|2. Chicken Elote Salad",
-      "3|Nate|3. Chicken Elote Salad",
-      "4|Nathaniel|1. Chicken Caesar Salad",
-      "5|Nathaniel|2. Chicken Caesar Salad",
+      "1|Nate|Chicken Caesar Salad|1/3|1/5",
+      "2|Nate|Chicken Elote Salad|2/3|2/5",
+      "3|Nate|Chicken Elote Salad|3/3|3/5",
+      "4|Nathaniel|Chicken Caesar Salad|1/2|4/5",
+      "5|Nathaniel|Chicken Caesar Salad|2/2|5/5",
     ],
   );
 });
 
-test("buildQueue can number continuously across the whole run", () => {
+test("filtering by person keeps both the person and sheet indexes intact", () => {
   const parsed = parsePages([
     sheet({
       header: HEADER,
@@ -209,26 +209,19 @@ test("buildQueue can number continuously across the whole run", () => {
     }),
   ]);
 
+  // position renumbers to the filtered list, but the two fixed indexes do not
+  // move: Nathaniel's labels are still 1/2 and 2/2 of his, and 2/3 and 3/3 of
+  // the sheet, so the printed label reads the same either way.
   assert.deepEqual(
-    buildQueue(parsed, { numbering: "continuous" }).map((l) => l.number),
-    [1, 2, 3],
-  );
-});
-
-test("filtering by person keeps that person's own numbering", () => {
-  const parsed = parsePages([
-    sheet({
-      header: HEADER,
-      rows: [[["Chicken Caesar Salad", 51], ["3", 115], ["1", 120], ["2", 147]]],
-    }),
-  ]);
-
-  const queue = buildQueue(parsed, { people: ["Nathaniel"] });
-  assert.deepEqual(
-    queue.map((l) => [l.position, l.person, l.number, l.personTotal]),
+    buildQueue(parsed, { people: ["Nathaniel"] }).map((l) => [
+      l.position,
+      l.person,
+      `${l.personIndex}/${l.personTotal}`,
+      `${l.sheetPosition}/${l.sheetTotal}`,
+    ]),
     [
-      [1, "Nathaniel", 1, 2],
-      [2, "Nathaniel", 2, 2],
+      [1, "Nathaniel", "1/2", "2/3"],
+      [2, "Nathaniel", "2/2", "3/3"],
     ],
   );
 });
