@@ -1,5 +1,11 @@
 /**
- * Thin wrapper over niimbluelib's Web Bluetooth client.
+ * Thin wrapper over niimbluelib's printer clients.
+ *
+ * The printer can be reached two ways, and everything above the connection is
+ * shared between them:
+ * - `bluetooth` uses Web Bluetooth (Chrome and Edge on Android and desktop).
+ * - `usb` uses Web Serial: over USB the printer is a serial port (a COM port on
+ *   Windows), which Chrome and Edge on desktop can open.
  *
  * niimbluelib is loaded as a global by a plain <script> tag so the app needs no
  * bundler; everything it exports is reached through `lib()`.
@@ -17,17 +23,20 @@ export const LABEL_TYPES = [
   { value: 5, label: "Transparent" },
 ];
 
+export const TRANSPORT_NAMES = { bluetooth: "Bluetooth", usb: "USB" };
+
 /** Reports which transports this browser offers. */
 export function transportSupport() {
   const api = lib();
-  if (!api) return { webBluetooth: false, webSerial: false };
+  if (!api) return { bluetooth: false, usb: false };
   const { webBluetooth, webSerial } = api.Utils.getAvailableTransports();
-  return { webBluetooth, webSerial };
+  return { bluetooth: webBluetooth, usb: webSerial };
 }
 
 export class PrinterSession {
   constructor() {
     this.client = null;
+    this.transport = null;
     this.deviceName = "";
     this.heartbeat = null;
     this.listeners = new Set();
@@ -52,10 +61,15 @@ export class PrinterSession {
     if (!this.isConnected()) return { connected: false };
     const info = this.client.getPrinterInfo();
     const meta = this.client.getModelMetadata();
+    const model = meta?.model ?? "Unknown";
     return {
       connected: true,
+      transport: this.transport,
+      // A Bluetooth printer advertises a name like "B1-H123"; a USB port is only
+      // known by its vendor and product ids, so the reported model stands in.
+      name: this.deviceName || `${model} · ${TRANSPORT_NAMES[this.transport]}`,
       deviceName: this.deviceName,
-      model: meta?.model ?? "Unknown",
+      model,
       dpi: meta?.dpi ?? 203,
       printheadPixels: meta?.printheadPixels ?? 384,
       densityMin: meta?.densityMin ?? 1,
@@ -81,44 +95,60 @@ export class PrinterSession {
     };
   }
 
-  /** Opens the browser's device picker and negotiates with the chosen printer. */
-  async connect() {
+  /**
+   * Opens the browser's device or port picker and negotiates with the chosen
+   * printer.
+   *
+   * @param {"bluetooth"|"usb"} transport
+   */
+  async connect(transport) {
     const api = lib();
     if (!api) throw new Error("The printer library failed to load. Reload the page and try again.");
-    if (!api.Utils.getAvailableTransports().webBluetooth) {
-      throw new Error("This browser has no Web Bluetooth support.");
+    const usb = transport === "usb";
+    const supported = transportSupport();
+    if (usb ? !supported.usb : !supported.bluetooth) {
+      throw new Error(`This browser cannot use ${TRANSPORT_NAMES[transport] ?? transport} printers.`);
     }
 
     await this.disconnect();
 
-    const client = new api.NiimbotBluetoothClient();
+    const client = usb ? new api.NiimbotSerialClient() : new api.NiimbotBluetoothClient();
+    // Events from a client that has since been replaced are ignored: a Bluetooth
+    // link reports its disconnect asynchronously, and switching to USB must not
+    // let that late event tear down the new connection.
     client.on("heartbeat", (event) => {
+      if (this.client !== client) return;
       this.heartbeat = event.data;
       this.#notify();
     });
     client.on("disconnect", () => {
+      if (this.client !== client) return;
       this.client = null;
+      this.transport = null;
       this.heartbeat = null;
       this.#notify();
     });
 
     const info = await client.connect();
     this.client = client;
-    this.deviceName = info.deviceName ?? "";
+    this.transport = usb ? "usb" : "bluetooth";
+    this.deviceName = usb ? "" : (info.deviceName ?? "");
     this.#notify();
     return this.status();
   }
 
   async disconnect() {
-    if (this.client) {
+    const client = this.client;
+    this.client = null;
+    this.transport = null;
+    this.heartbeat = null;
+    if (client) {
       try {
-        await this.client.disconnect();
+        await client.disconnect();
       } catch {
         // The printer may already be gone; dropping the reference is enough.
       }
     }
-    this.client = null;
-    this.heartbeat = null;
     this.#notify();
   }
 

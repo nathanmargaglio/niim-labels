@@ -1,7 +1,7 @@
 # Order Labels
 
 A mobile-first web app that turns an orders PDF into one printed label per item
-and sends them straight to a **NIIMBOT B1** over Bluetooth. It is a static site —
+and sends them straight to a **NIIMBOT B1** over Bluetooth or USB. It is a static site —
 no server, no build step at runtime — so it runs from GitHub Pages.
 
 Each label is laid out with the person's name top and bottom and the order in
@@ -50,17 +50,28 @@ selection, so a label outside the current range previews as `–/3`.
 2. **Pick what to print.** Choose everyone or one person, then a range.
    Printing `#4–#6` prints exactly the labels shown as `#4`, `#5` and `#6`.
 
-3. **Print.** Connect the printer through the browser's Bluetooth picker and
-   print. Progress is shown per label and a run can be stopped between labels.
+3. **Print.** Connect the printer over USB or Bluetooth and print. Progress is
+   shown per label and a run can be stopped between labels.
 
 ## Browser support
 
-Printing needs [Web Bluetooth](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API),
-which is available in **Chrome and Edge on Android, Windows, macOS and Linux**.
+The printer can be reached two ways; the app offers whichever the browser
+supports.
 
-**On iPhone and iPad neither Safari nor Chrome supports Web Bluetooth**, so a
-Web Bluetooth browser such as Bluefy is required there. Loading a PDF and
-checking the labels works in any modern browser.
+| | Needs | Works in |
+| --- | --- | --- |
+| **USB** | [Web Serial](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API) | Chrome and Edge on Windows, macOS and Linux |
+| **Bluetooth** | [Web Bluetooth](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API) | Chrome and Edge on Android, Windows, macOS and Linux |
+
+Over USB the B1 shows up as a serial port, so connecting means choosing it from
+the browser's port list — on Windows it is usually a *USB Serial Device* with a
+COM number. Only one program can hold the port at a time, so close the NIIMBOT
+app first; the app says so if the port is busy.
+
+**On iPhone and iPad no browser supports Web Serial, and neither Safari nor
+Chrome supports Web Bluetooth**, so a Web Bluetooth browser such as Bluefy is
+required there. Loading a PDF and checking the labels works in any modern
+browser.
 
 The page must be served over HTTPS (GitHub Pages is) or from `localhost`.
 
@@ -82,8 +93,8 @@ and deployment → Source → GitHub Actions**.
 
 ```bash
 npm install
-npm test              # parser unit tests
-npm run serve         # http://localhost:8080 — a secure context, so Bluetooth works
+npm test              # parser tests, plus USB tests against an emulated B1
+npm run serve         # http://localhost:8080 — a secure context, so USB and Bluetooth work
 npm run build:vendor  # regenerate vendor/ after changing a dependency
 ```
 
@@ -101,7 +112,7 @@ rebuilds them and fails if the committed copies have drifted from
 | `js/orders.js`      | PDF text runs → people, orders and the label queue. No DOM, unit tested. |
 | `js/pdf-source.js`  | Reads a PDF into positioned text runs with pdf.js.          |
 | `js/label.js`       | Draws one label on a canvas and reduces it to pure black and white. |
-| `js/printer.js`     | Web Bluetooth connection and the print run.                 |
+| `js/printer.js`     | USB and Bluetooth connections, and the print run.           |
 | `js/settings.js`    | Settings, validated and persisted in `localStorage`.        |
 | `js/app.js`         | UI wiring.                                                  |
 

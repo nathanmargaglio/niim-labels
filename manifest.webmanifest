@@ -1,7 +1,7 @@
 {
   "name": "Order Labels",
   "short_name": "Labels",
-  "description": "Print per-person order labels from an orders PDF to a NIIMBOT B1 over Bluetooth.",
+  "description": "Print per-person order labels from an orders PDF to a NIIMBOT B1 over Bluetooth or USB.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
