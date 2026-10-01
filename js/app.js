@@ -1,7 +1,7 @@
 import { parsePages, buildQueue } from "./orders.js";
 import { readPdfPages } from "./pdf-source.js";
 import { renderLabel, mmToPx, pxToMm, FONT_STACKS } from "./label.js";
-import { PrinterSession, transportSupport, LABEL_TYPES } from "./printer.js";
+import { PrinterSession, transportSupport, LABEL_TYPES, TRANSPORT_NAMES } from "./printer.js";
 import { loadSettings, saveSettings, DEFAULTS, BADGE_SCOPES } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
@@ -41,8 +41,11 @@ const el = {
   printerDialog: $("printer-dialog"),
   printerDetails: $("printer-details"),
   printerError: $("printer-error"),
-  bluetoothNotice: $("bluetooth-notice"),
-  connectButton: $("connect-button"),
+  transportNotice: $("transport-notice"),
+  connectUsb: $("connect-usb"),
+  connectBluetooth: $("connect-bluetooth"),
+  usbHelp: $("usb-help"),
+  bluetoothHelp: $("bluetooth-help"),
   disconnectButton: $("disconnect-button"),
 
   settingsButton: $("settings-button"),
@@ -434,8 +437,19 @@ function setProgress(done, total) {
 
 function describeError(error) {
   const message = String(error?.message ?? error);
-  if (/user cancelled|user denied|chooser/i.test(message)) return "No printer was selected.";
-  if (/not connected|gatt/i.test(message)) return "Lost the connection to the printer. Reconnect and try again.";
+  if (/user cancelled|user denied|chooser|no port selected/i.test(message)) return "No printer was selected.";
+  if (/failed to open serial port/i.test(message)) {
+    return (
+      "Could not open the USB port. Another program is probably using it — close the NIIMBOT app " +
+      "and any other tab connected to the printer, then try again."
+    );
+  }
+  if (/initial negotiate/i.test(message)) {
+    return "The chosen device did not answer like a NIIMBOT printer. Check that it is on and that you picked its port.";
+  }
+  if (/not connected|gatt|port is not|device has been lost/i.test(message)) {
+    return "Lost the connection to the printer. Reconnect and try again.";
+  }
   return message;
 }
 
@@ -446,15 +460,16 @@ let lastPrinterSignature = "";
 function renderPrinterState() {
   const status = printer.status();
   el.printerButton.classList.toggle("connected", status.connected);
-  el.printerLabel.textContent = status.connected ? status.deviceName || status.model : "Not connected";
-  el.connectButton.hidden = status.connected;
+  el.printerLabel.textContent = status.connected ? status.name : "Not connected";
+  showConnectOptions(!status.connected);
   el.disconnectButton.hidden = !status.connected;
   el.printerDetails.hidden = !status.connected;
 
   if (status.connected) {
     const rows = [
       ["Model", status.model],
-      ["Device", status.deviceName || "—"],
+      ["Connection", TRANSPORT_NAMES[status.transport]],
+      status.deviceName ? ["Device", status.deviceName] : null,
       ["Resolution", `${status.dpi} dpi · ${status.printheadPixels} px wide`],
       status.battery != null ? ["Battery", `${status.battery}%`] : null,
       status.paperInserted != null ? ["Paper", status.paperInserted ? "Loaded" : "Not detected"] : null,
@@ -486,31 +501,40 @@ function renderPrinterState() {
   }
 }
 
-async function connect() {
+async function connect(button) {
+  const label = button.textContent;
   el.printerError.hidden = true;
-  el.connectButton.disabled = true;
-  el.connectButton.textContent = "Connecting…";
+  el.connectUsb.disabled = true;
+  el.connectBluetooth.disabled = true;
+  button.textContent = "Connecting…";
   try {
-    await printer.connect();
+    await printer.connect(button.dataset.transport);
     el.printerDialog.close();
   } catch (error) {
     el.printerError.textContent = describeError(error);
     el.printerError.hidden = false;
   } finally {
-    el.connectButton.disabled = false;
-    el.connectButton.textContent = "Connect a printer";
+    el.connectUsb.disabled = false;
+    el.connectBluetooth.disabled = false;
+    button.textContent = label;
   }
 }
 
-function checkBluetoothSupport() {
-  const { webBluetooth } = transportSupport();
-  el.bluetoothNotice.hidden = webBluetooth;
-  el.connectButton.disabled = !webBluetooth;
-  if (!webBluetooth) {
-    el.bluetoothNotice.textContent =
-      "This browser cannot talk to Bluetooth devices. Use Chrome or Edge on Android, Windows, macOS or Linux. " +
-      "On iPhone and iPad, Safari and Chrome have no Web Bluetooth support — a Web Bluetooth browser such as " +
-      "Bluefy is needed. You can still load a PDF here and check the labels.";
+/** Shows a connect button, and its help, for each transport this browser has. */
+function showConnectOptions(show) {
+  const supported = transportSupport();
+  el.connectUsb.hidden = !show || !supported.usb;
+  el.usbHelp.hidden = !show || !supported.usb;
+  el.connectBluetooth.hidden = !show || !supported.bluetooth;
+  el.bluetoothHelp.hidden = !show || !supported.bluetooth;
+
+  const none = !supported.usb && !supported.bluetooth;
+  el.transportNotice.hidden = !none;
+  if (none) {
+    el.transportNotice.textContent =
+      "This browser cannot reach the printer. Use Chrome or Edge: over USB on Windows, macOS or Linux, " +
+      "or over Bluetooth on those and on Android. Browsers on iPhone and iPad support neither, so a Web " +
+      "Bluetooth browser such as Bluefy is needed there. You can still load a PDF here and check the labels.";
   }
 }
 
@@ -633,11 +657,11 @@ el.cancelButton.addEventListener("click", () => {
 });
 
 el.printerButton.addEventListener("click", () => {
-  checkBluetoothSupport();
   el.printerError.hidden = true;
   el.printerDialog.showModal();
 });
-el.connectButton.addEventListener("click", connect);
+el.connectUsb.addEventListener("click", () => connect(el.connectUsb));
+el.connectBluetooth.addEventListener("click", () => connect(el.connectBluetooth));
 el.disconnectButton.addEventListener("click", () => printer.disconnect());
 
 el.settingsButton.addEventListener("click", () => {
@@ -666,6 +690,5 @@ el.settingsReset.addEventListener("click", () => {
 
 printer.onChange(renderPrinterState);
 
-checkBluetoothSupport();
 renderPrinterState();
 fillSettingsForm();

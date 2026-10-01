@@ -2,7 +2,7 @@
   "name": "niim-labels",
   "version": "1.0.0",
   "private": true,
-  "description": "Print per-person order labels from a Factor orders PDF to a NIIMBOT B1 over Web Bluetooth",
+  "description": "Print per-person order labels from a Factor orders PDF to a NIIMBOT B1 over Bluetooth or USB",
   "type": "module",
   "scripts": {
     "build:vendor": "node tools/build-vendor.mjs",

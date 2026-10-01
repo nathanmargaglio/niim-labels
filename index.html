@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#111418" />
     <meta
       name="description"
-      content="Print per-person order labels from an orders PDF to a NIIMBOT B1 over Bluetooth."
+      content="Print per-person order labels from an orders PDF to a NIIMBOT B1 over Bluetooth or USB."
     />
     <title>Order Labels</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
@@ -107,16 +107,24 @@
         <button class="icon-button" aria-label="Close">&times;</button>
       </form>
       <div class="sheet-body">
-        <p class="notice" id="bluetooth-notice" hidden></p>
+        <p class="notice" id="transport-notice" hidden></p>
         <dl class="details" id="printer-details" hidden></dl>
         <p class="notice error" id="printer-error" hidden></p>
-        <div class="sheet-actions">
-          <button type="button" id="connect-button" class="primary">Connect a printer</button>
+        <div class="sheet-actions stacked">
+          <button type="button" id="connect-usb" class="primary" data-transport="usb">Connect over USB</button>
+          <button type="button" id="connect-bluetooth" class="primary" data-transport="bluetooth">
+            Connect over Bluetooth
+          </button>
           <button type="button" id="disconnect-button" class="ghost" hidden>Disconnect</button>
         </div>
-        <p class="fineprint">
-          Pairing uses the browser's Bluetooth picker. Turn the printer on and keep it nearby — it appears as
-          something like <code>B1-XXXX</code>.
+        <p class="fineprint" id="usb-help">
+          <strong>USB:</strong> plug the printer in and turn it on, then choose its port. On Windows it is usually
+          listed as a <em>USB Serial Device</em> with a COM number. Close the NIIMBOT app first — only one program
+          can use the port at a time.
+        </p>
+        <p class="fineprint" id="bluetooth-help">
+          <strong>Bluetooth:</strong> turn the printer on and keep it nearby. It appears as something like
+          <code>B1-XXXX</code>.
         </p>
       </div>
     </dialog>

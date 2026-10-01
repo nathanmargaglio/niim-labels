@@ -626,6 +626,14 @@ button {
   flex: 1;
 }
 
+.sheet-actions.stacked {
+  flex-direction: column;
+}
+
+.sheet-body .fineprint {
+  margin: 12px 0 0;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
