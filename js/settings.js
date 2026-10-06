@@ -22,7 +22,13 @@ export const DEFAULTS = {
   /** Label roll that ships with the B1: 50 x 30 mm. */
   widthMm: 50,
   heightMm: 30,
-  marginMm: 2.5,
+  marginTopMm: 2.5,
+  marginRightMm: 2.5,
+  marginBottomMm: 2.5,
+  marginLeftMm: 2.5,
+  /** Nudges the print on the label; positive moves it right and down. */
+  offsetXMm: 0,
+  offsetYMm: 0,
   density: 3,
   labelType: 1,
   copies: 1,
@@ -35,14 +41,28 @@ export const DEFAULTS = {
 const NUMBERS = {
   widthMm: [5, 120],
   heightMm: [5, 200],
-  marginMm: [0, 15],
+  marginTopMm: [0, 15],
+  marginRightMm: [0, 15],
+  marginBottomMm: [0, 15],
+  marginLeftMm: [0, 15],
+  offsetXMm: [-10, 10],
+  offsetYMm: [-10, 10],
   density: [1, 5],
   copies: [1, 20],
 };
 
-function clean(raw) {
+/** Margin settings, one per side. */
+export const MARGIN_KEYS = ["marginTopMm", "marginRightMm", "marginBottomMm", "marginLeftMm"];
+
+export function clean(raw) {
   const settings = { ...DEFAULTS };
   if (!raw || typeof raw !== "object") return settings;
+
+  // Earlier versions had a single margin for all four sides.
+  if (raw.marginMm !== undefined) {
+    raw = { ...raw };
+    for (const key of MARGIN_KEYS) raw[key] ??= raw.marginMm;
+  }
 
   for (const [key, [min, max]] of Object.entries(NUMBERS)) {
     const value = Number(raw[key]);

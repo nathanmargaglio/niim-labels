@@ -640,9 +640,50 @@ button {
   gap: 0 12px;
 }
 
+.grid-2 .span-2 {
+  grid-column: 1 / -1;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 8px;
+}
+
+.group {
+  margin: 4px 0 14px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.group legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.group .grid-2,
+.group .grid-4 {
+  row-gap: 10px;
+}
+
+.group .field {
+  margin-bottom: 0;
+}
+
+.group .fineprint {
+  margin: 10px 0 0;
+}
+
 @media (max-width: 400px) {
   .grid-2 {
     grid-template-columns: 1fr;
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

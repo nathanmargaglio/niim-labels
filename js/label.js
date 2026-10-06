@@ -12,18 +12,6 @@
  *     Nate                  3/5
  */
 
-const MM_PER_INCH = 25.4;
-
-/** Converts millimetres to device pixels at the given resolution. */
-export function mmToPx(mm, dpi) {
-  return Math.max(1, Math.round((mm / MM_PER_INCH) * dpi));
-}
-
-/** Converts device pixels back to millimetres, for display. */
-export function pxToMm(px, dpi) {
-  return (px / dpi) * MM_PER_INCH;
-}
-
 export const FONT_STACKS = {
   sans: '"Helvetica Neue", Helvetica, Arial, sans-serif',
   mono: '"DejaVu Sans Mono", "Courier New", monospace',
@@ -137,14 +125,15 @@ export function thresholdCanvas(canvas, level = 176) {
  * @param {{person: string, order: string, topRight?: string, bottomRight?: string}} label
  *        `topRight` and `bottomRight` are drawn in the corners; omit or pass an
  *        empty string to leave a corner blank.
- * @param {object} style Pixel geometry and typography.
- * @returns {HTMLCanvasElement} The same canvas, thresholded and ready to encode.
+ * @param {object} style Pixel geometry and typography: the label's size, and
+ *        `content`, the box `{x, y, width, height}` the text is kept inside.
+ * @returns {HTMLCanvasElement} The same canvas, thresholded.
  */
 export function renderLabel(canvas, label, style) {
   const {
     widthPx,
     heightPx,
-    marginPx,
+    content,
     fontFamily = FONT_STACKS.sans,
     boldName = true,
     threshold = 176,
@@ -160,8 +149,9 @@ export function renderLabel(canvas, label, style) {
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
 
-  const contentWidth = Math.max(1, widthPx - marginPx * 2);
-  const contentHeight = Math.max(1, heightPx - marginPx * 2);
+  const { x: left, y: top, width: contentWidth, height: contentHeight } = content;
+  const right = left + contentWidth;
+  const bottom = top + contentHeight;
   const nameFont = (size) => `${boldName ? "bold " : ""}${size}px ${fontFamily}`;
   const plainFont = (size) => `${size}px ${fontFamily}`;
   const name = label.person || "";
@@ -194,8 +184,8 @@ export function renderLabel(canvas, label, style) {
     ctx.font = nameFont(nameSize);
     nameHeight = lineHeight(ctx, nameSize);
     const gap = nameSize * 0.4;
-    bandTop = marginPx + nameHeight + gap;
-    bandHeight = heightPx - marginPx - nameHeight - gap - bandTop;
+    bandTop = top + nameHeight + gap;
+    bandHeight = bottom - nameHeight - gap - bandTop;
     if (bandHeight >= contentHeight * 0.3 || nameSize <= 7) break;
     nameSize = Math.max(7, Math.floor(nameSize * 0.88));
   }
@@ -214,17 +204,17 @@ export function renderLabel(canvas, label, style) {
   // Name and badge sit on a shared baseline so their differing sizes line up.
   ctx.font = nameFont(nameSize);
   const nameAscent = fontBox(ctx, nameSize).ascent;
-  const topBaseline = marginPx + nameAscent;
-  const bottomBaseline = heightPx - marginPx - nameHeight + nameAscent;
+  const topBaseline = top + nameAscent;
+  const bottomBaseline = bottom - nameHeight + nameAscent;
 
   ctx.textBaseline = "alphabetic";
-  ctx.fillText(name, marginPx, topBaseline, nameWidth);
-  ctx.fillText(name, marginPx, bottomBaseline, nameWidth);
+  ctx.fillText(name, left, topBaseline, nameWidth);
+  ctx.fillText(name, left, bottomBaseline, nameWidth);
 
   ctx.textAlign = "right";
   ctx.font = plainFont(badgeSize);
-  if (topRight !== "") ctx.fillText(topRight, widthPx - marginPx, topBaseline);
-  if (bottomRight !== "") ctx.fillText(bottomRight, widthPx - marginPx, bottomBaseline);
+  if (topRight !== "") ctx.fillText(topRight, right, topBaseline);
+  if (bottomRight !== "") ctx.fillText(bottomRight, right, bottomBaseline);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
@@ -233,9 +223,78 @@ export function renderLabel(canvas, label, style) {
   const orderLineHeight = lineHeight(ctx, orderSize);
   let y = bandTop + (bandHeight - orderLines.length * orderLineHeight) / 2;
   for (const line of orderLines) {
-    ctx.fillText(line, marginPx, y, contentWidth);
+    ctx.fillText(line, left, y, contentWidth);
     y += orderLineHeight;
   }
 
   return thresholdCanvas(canvas, threshold);
+}
+
+/**
+ * Places a rendered label into the printhead-wide image the printer is sent.
+ *
+ * @param {HTMLCanvasElement} target Resized in place.
+ * @param {HTMLCanvasElement} labelCanvas From {@link renderLabel}.
+ * @param {ReturnType<import("./geometry.js").labelGeometry>} geo
+ */
+export function composePrintImage(target, labelCanvas, geo) {
+  target.width = geo.printheadPixels;
+  target.height = geo.heightPx;
+  const ctx = target.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, target.width, target.height);
+  // Whole-pixel offsets and no scaling, so the pixels are copied exactly.
+  ctx.drawImage(labelCanvas, geo.shiftX, geo.shiftY);
+  return target;
+}
+
+/**
+ * Draws what a printed image will look like on the label itself.
+ *
+ * The print image is mapped back onto the label, so the preview shows exactly
+ * the pixels that land on it. The strips the printhead cannot reach are
+ * hatched, since nothing can ever be printed there.
+ *
+ * @param {HTMLCanvasElement} target Resized in place to the label's size.
+ * @param {HTMLCanvasElement} printImage From {@link composePrintImage}.
+ * @param {ReturnType<import("./geometry.js").labelGeometry>} geo
+ */
+export function drawLabelPreview(target, printImage, geo) {
+  target.width = geo.widthPx;
+  target.height = geo.heightPx;
+  const ctx = target.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, target.width, target.height);
+  ctx.drawImage(printImage, -geo.shiftX, -geo.shiftY);
+
+  const { printable } = geo;
+  const strips = [
+    [0, 0, printable.left, geo.heightPx],
+    [printable.right, 0, geo.widthPx - printable.right, geo.heightPx],
+    [printable.left, 0, printable.right - printable.left, printable.top],
+    [printable.left, printable.bottom, printable.right - printable.left, geo.heightPx - printable.bottom],
+  ];
+  ctx.save();
+  ctx.strokeStyle = "rgba(200, 40, 40, 0.45)";
+  ctx.fillStyle = "rgba(200, 40, 40, 0.08)";
+  ctx.lineWidth = 1;
+  for (const [x, y, w, h] of strips) {
+    if (w <= 0 || h <= 0) continue;
+    ctx.fillRect(x, y, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.beginPath();
+    for (let d = -h; d < w; d += 6) {
+      ctx.moveTo(x + d, y + h);
+      ctx.lineTo(x + d + h, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+  return target;
 }

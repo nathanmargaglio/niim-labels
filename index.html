@@ -136,6 +136,14 @@
       </form>
       <div class="sheet-body">
         <div class="grid-2">
+          <div class="field span-2">
+            <label for="set-size-preset">Label roll</label>
+            <select id="set-size-preset">
+              <option value="50x30">50 × 30 mm</option>
+              <option value="40x30">40 × 30 mm</option>
+              <option value="custom">Custom size</option>
+            </select>
+          </div>
           <div class="field">
             <label for="set-width">Label width (mm)</label>
             <input type="number" id="set-width" min="5" max="120" step="0.5" inputmode="decimal" />
@@ -143,10 +151,6 @@
           <div class="field">
             <label for="set-height">Label height (mm)</label>
             <input type="number" id="set-height" min="5" max="200" step="0.5" inputmode="decimal" />
-          </div>
-          <div class="field">
-            <label for="set-margin">Margin (mm)</label>
-            <input type="number" id="set-margin" min="0" max="15" step="0.5" inputmode="decimal" />
           </div>
           <div class="field">
             <label for="set-copies">Copies of each</label>
@@ -177,6 +181,44 @@
             </select>
           </div>
         </div>
+        <fieldset class="group">
+          <legend>Margins (mm)</legend>
+          <div class="grid-4">
+            <div class="field">
+              <label for="set-margin-top">Top</label>
+              <input type="number" id="set-margin-top" min="0" max="15" step="0.5" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label for="set-margin-right">Right</label>
+              <input type="number" id="set-margin-right" min="0" max="15" step="0.5" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label for="set-margin-bottom">Bottom</label>
+              <input type="number" id="set-margin-bottom" min="0" max="15" step="0.5" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label for="set-margin-left">Left</label>
+              <input type="number" id="set-margin-left" min="0" max="15" step="0.5" inputmode="decimal" />
+            </div>
+          </div>
+        </fieldset>
+        <fieldset class="group">
+          <legend>Alignment (mm)</legend>
+          <div class="grid-2">
+            <div class="field">
+              <label for="set-offset-x">Move right</label>
+              <input type="number" id="set-offset-x" min="-10" max="10" step="0.25" inputmode="decimal" />
+            </div>
+            <div class="field">
+              <label for="set-offset-y">Move down</label>
+              <input type="number" id="set-offset-y" min="-10" max="10" step="0.25" inputmode="decimal" />
+            </div>
+          </div>
+          <p class="fineprint">
+            The label is assumed to sit in the middle of the printhead. If prints still land off-centre, measure
+            how far and nudge them here; negative values move left and up.
+          </p>
+        </fieldset>
         <label class="check">
           <input type="checkbox" id="set-bold" />
           <span>Bold names</span>
