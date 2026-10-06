@@ -1,6 +1,7 @@
 import { parsePages, buildQueue } from "./orders.js";
 import { readPdfPages } from "./pdf-source.js";
-import { renderLabel, mmToPx, pxToMm, FONT_STACKS } from "./label.js";
+import { renderLabel, composePrintImage, drawLabelPreview, FONT_STACKS } from "./label.js";
+import { labelGeometry, pxToMm } from "./geometry.js";
 import { PrinterSession, transportSupport, LABEL_TYPES, TRANSPORT_NAMES } from "./printer.js";
 import { loadSettings, saveSettings, DEFAULTS, BADGE_SCOPES } from "./settings.js";
 
@@ -54,7 +55,13 @@ const el = {
   widthNotice: $("width-notice"),
   setWidth: $("set-width"),
   setHeight: $("set-height"),
-  setMargin: $("set-margin"),
+  setSizePreset: $("set-size-preset"),
+  setMarginTop: $("set-margin-top"),
+  setMarginRight: $("set-margin-right"),
+  setMarginBottom: $("set-margin-bottom"),
+  setMarginLeft: $("set-margin-left"),
+  setOffsetX: $("set-offset-x"),
+  setOffsetY: $("set-offset-y"),
   setCopies: $("set-copies"),
   setDensity: $("set-density"),
   setDensityValue: $("set-density-value"),
@@ -66,7 +73,15 @@ const el = {
 };
 
 const printer = new PrinterSession();
+// The label is drawn at its own size, then placed in a printhead-wide image.
+const labelCanvas = document.createElement("canvas");
 const printCanvas = document.createElement("canvas");
+
+/** Label rolls offered as presets; anything else is a custom size. */
+const SIZE_PRESETS = {
+  "50x30": { widthMm: 50, heightMm: 30 },
+  "40x30": { widthMm: 40, heightMm: 30 },
+};
 
 const state = {
   sheet: null,
@@ -81,19 +96,9 @@ const state = {
 
 /* ---------------------------------------------------------------- geometry */
 
-/** Pixel geometry for the current settings, clamped to what the printhead covers. */
+/** Where the label sits under the printhead for the current settings. */
 function geometry() {
-  const caps = printer.capabilities();
-  const requestedWidth = mmToPx(state.settings.widthMm, caps.dpi);
-  const widthPx = Math.min(requestedWidth, caps.printheadPixels);
-  return {
-    dpi: caps.dpi,
-    widthPx,
-    heightPx: mmToPx(state.settings.heightMm, caps.dpi),
-    marginPx: mmToPx(state.settings.marginMm, caps.dpi),
-    clampedFrom: requestedWidth > caps.printheadPixels ? requestedWidth : null,
-    printheadPixels: caps.printheadPixels,
-  };
+  return labelGeometry(state.settings, printer.capabilities());
 }
 
 /**
@@ -132,7 +137,7 @@ function labelStyle(geo) {
   return {
     widthPx: geo.widthPx,
     heightPx: geo.heightPx,
-    marginPx: geo.marginPx,
+    content: geo.content,
     fontFamily: FONT_STACKS[state.settings.font] ?? FONT_STACKS.sans,
     boldName: state.settings.boldName,
   };
@@ -340,17 +345,21 @@ function renderPreview() {
     return;
   }
 
+  // The preview goes through the same steps as a print, then maps the image
+  // the printer would get back onto the label.
   const geo = geometry();
-  renderLabel(el.preview, withBadges(label), labelStyle(geo));
+  printImage(label, geo, labelStyle(geo));
+  drawLabelPreview(el.preview, printCanvas, geo);
 
   const inRange = label.position >= state.from && label.position <= state.to;
   el.previewCaption.textContent =
     `#${label.position} of ${state.queue.length} · ${label.person} ${label.personIndex}/${label.personTotal}` +
     (inRange ? "" : " · outside the print range");
+  const unreachable = geo.unreachableLeft > 0 || geo.unreachableRight > 0;
   el.previewMeta.textContent =
-    `${round1(pxToMm(geo.widthPx, geo.dpi))} × ${round1(pxToMm(geo.heightPx, geo.dpi))} mm ` +
-    `· ${geo.widthPx} × ${geo.heightPx} px at ${geo.dpi} dpi` +
-    (geo.clampedFrom === null ? "" : ` · width limited by the ${geo.printheadPixels} px printhead`);
+    `${round1(state.settings.widthMm)} × ${round1(state.settings.heightMm)} mm label ` +
+    `· sent as ${geo.printheadPixels} × ${geo.heightPx} px at ${geo.dpi} dpi` +
+    (unreachable ? " · hatched edges are beyond the printhead" : "");
 
   el.previewPrev.disabled = state.previewIndex <= 0;
   el.previewNext.disabled = state.previewIndex >= state.queue.length - 1;
@@ -366,6 +375,12 @@ function stepPreview(delta) {
 }
 
 /* ------------------------------------------------------------------- print */
+
+/** Renders one label into the printhead-wide image sent to the printer. */
+function printImage(label, geo, style) {
+  renderLabel(labelCanvas, withBadges(label), style);
+  return composePrintImage(printCanvas, labelCanvas, geo);
+}
 
 function updatePrintButton() {
   const selected = selectionSize();
@@ -406,7 +421,7 @@ async function startPrint() {
   try {
     const { printed, cancelled } = await printer.print({
       count: slice.length,
-      renderPage: (index) => renderLabel(printCanvas, withBadges(slice[index]), style),
+      renderPage: (index) => printImage(slice[index], geo, style),
       copies: state.settings.copies,
       density: state.settings.density,
       labelType: state.settings.labelType,
@@ -552,7 +567,12 @@ function fillSettingsForm() {
   }
   el.setWidth.value = String(s.widthMm);
   el.setHeight.value = String(s.heightMm);
-  el.setMargin.value = String(s.marginMm);
+  el.setMarginTop.value = String(s.marginTopMm);
+  el.setMarginRight.value = String(s.marginRightMm);
+  el.setMarginBottom.value = String(s.marginBottomMm);
+  el.setMarginLeft.value = String(s.marginLeftMm);
+  el.setOffsetX.value = String(s.offsetXMm);
+  el.setOffsetY.value = String(s.offsetYMm);
   el.setCopies.value = String(s.copies);
   el.setDensity.value = String(s.density);
   el.setTopBadge.value = s.topBadge;
@@ -565,13 +585,24 @@ function fillSettingsForm() {
 
 function updateSettingsNotes() {
   el.setDensityValue.textContent = String(state.settings.density);
+  el.setSizePreset.value = sizePresetFor(state.settings);
+
   const geo = geometry();
-  el.widthNotice.hidden = geo.clampedFrom === null;
-  if (geo.clampedFrom !== null) {
+  const left = round1(pxToMm(geo.unreachableLeft, geo.dpi));
+  const right = round1(pxToMm(geo.unreachableRight, geo.dpi));
+  el.widthNotice.hidden = left === 0 && right === 0;
+  if (!el.widthNotice.hidden) {
     el.widthNotice.textContent =
-      `The printhead is ${geo.printheadPixels} px (${round1(pxToMm(geo.printheadPixels, geo.dpi))} mm) wide, ` +
-      `so labels are rendered at that width instead of ${geo.clampedFrom} px.`;
+      `The printhead is ${round1(pxToMm(geo.printheadPixels, geo.dpi))} mm wide, so it cannot reach ` +
+      `${left} mm on the left and ${right} mm on the right of this label. Text is kept clear of those strips.`;
   }
+}
+
+function sizePresetFor(settings) {
+  const match = Object.entries(SIZE_PRESETS).find(
+    ([, size]) => size.widthMm === settings.widthMm && size.heightMm === settings.heightMm,
+  );
+  return match ? match[0] : "custom";
 }
 
 function applySettingsFromForm() {
@@ -579,7 +610,12 @@ function applySettingsFromForm() {
     ...state.settings,
     widthMm: Number(el.setWidth.value),
     heightMm: Number(el.setHeight.value),
-    marginMm: Number(el.setMargin.value),
+    marginTopMm: Number(el.setMarginTop.value),
+    marginRightMm: Number(el.setMarginRight.value),
+    marginBottomMm: Number(el.setMarginBottom.value),
+    marginLeftMm: Number(el.setMarginLeft.value),
+    offsetXMm: Number(el.setOffsetX.value),
+    offsetYMm: Number(el.setOffsetY.value),
     copies: Number(el.setCopies.value),
     density: Number(el.setDensity.value),
     labelType: Number(el.setLabelType.value),
@@ -671,7 +707,12 @@ el.settingsButton.addEventListener("click", () => {
 for (const input of [
   el.setWidth,
   el.setHeight,
-  el.setMargin,
+  el.setMarginTop,
+  el.setMarginRight,
+  el.setMarginBottom,
+  el.setMarginLeft,
+  el.setOffsetX,
+  el.setOffsetY,
   el.setCopies,
   el.setDensity,
   el.setLabelType,
@@ -682,6 +723,13 @@ for (const input of [
 ]) {
   input.addEventListener("input", applySettingsFromForm);
 }
+el.setSizePreset.addEventListener("input", () => {
+  const size = SIZE_PRESETS[el.setSizePreset.value];
+  if (!size) return;
+  el.setWidth.value = String(size.widthMm);
+  el.setHeight.value = String(size.heightMm);
+  applySettingsFromForm();
+});
 el.settingsReset.addEventListener("click", () => {
   state.settings = saveSettings({ ...DEFAULTS });
   fillSettingsForm();

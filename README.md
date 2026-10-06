@@ -77,11 +77,23 @@ The page must be served over HTTPS (GitHub Pages is) or from `localhost`.
 
 ## Label size
 
-The B1 prints at 203 dpi across a 384 px (48 mm) printhead. The defaults match
-the 50 × 30 mm roll that ships with it; a label wider than the printhead is
-rendered at the printhead's width, which the preview says when it happens. Label
-size, margin, darkness, label type, copies, the two corner indexes and the font
-are all in **Settings** and are remembered on the device.
+The B1 prints at 203 dpi across a 384 px (48 mm) printhead, and the label roll
+sits centred under it. The printer does not centre a narrower image itself — it
+pins it to one side of the printhead — so every label is sent as a full
+printhead-wide image with the label drawn in the middle. That keeps a 40 × 30 mm
+label as well placed as the 50 × 30 mm roll that ships with the printer. On a
+label wider than the printhead the strips at either edge cannot be printed;
+text is kept clear of them and the preview hatches them.
+
+The preview is made from the exact image sent to the printer, mapped back onto
+the label, so what it shows is what prints.
+
+Everything is in **Settings** and remembered on the device: the label roll (50 ×
+30 mm, 40 × 30 mm or a custom size), a margin for each side, darkness, label
+type, copies, the two corner indexes and the font. If prints still land off
+centre — a roll guide that is not quite central, say — measure how far and set
+**Alignment** to move the print right or down (negative values move it left or
+up).
 
 ## Deploying
 
@@ -93,7 +105,7 @@ and deployment → Source → GitHub Actions**.
 
 ```bash
 npm install
-npm test              # parser tests, plus USB tests against an emulated B1
+npm test              # parser and geometry tests, plus USB tests against an emulated B1
 npm run serve         # http://localhost:8080 — a secure context, so USB and Bluetooth work
 npm run build:vendor  # regenerate vendor/ after changing a dependency
 ```
@@ -111,7 +123,8 @@ rebuilds them and fails if the committed copies have drifted from
 | ------------------- | ----------------------------------------------------------- |
 | `js/orders.js`      | PDF text runs → people, orders and the label queue. No DOM, unit tested. |
 | `js/pdf-source.js`  | Reads a PDF into positioned text runs with pdf.js.          |
-| `js/label.js`       | Draws one label on a canvas and reduces it to pure black and white. |
+| `js/geometry.js`    | Where the label sits under the printhead: margins, alignment, printable area. No DOM, unit tested. |
+| `js/label.js`       | Draws one label, reduces it to pure black and white, and places it in the printhead-wide image. |
 | `js/printer.js`     | USB and Bluetooth connections, and the print run.           |
 | `js/settings.js`    | Settings, validated and persisted in `localStorage`.        |
 | `js/app.js`         | UI wiring.                                                  |
